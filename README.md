@@ -11,7 +11,7 @@
   <a href="https://github.com/Spark-Agents-Workforce/engram/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/OpenClaw-Plugin-FF6B35" alt="OpenClaw Plugin">
   <img src="https://img.shields.io/badge/Gemini-Embedding--2-4285F4?logo=google&logoColor=white" alt="Gemini Embedding-2">
-  <img src="https://img.shields.io/badge/tests-92%20unit%20·%2063%20live-brightgreen" alt="Tests passing">
+  <img src="https://img.shields.io/badge/tests-98%20passing-brightgreen" alt="Tests passing">
 </p>
 
 <p align="center">
@@ -62,7 +62,7 @@ Recently-indexed notes score higher than old ones. Exponential decay with a conf
 
 🖼️ **Multimodal**
 
-Gemini Embedding-2 puts text, images, and audio in the same vector space. A text query can find a screenshot. A description can surface a voice memo. No OCR, no transcription — the model understands the content natively. Supported: `.jpg`, `.png`, `.webp`, `.gif`, `.mp3`, `.wav`, `.ogg`, `.opus`, `.m4a`, `.aac`, `.flac`. Multimodal indexing is opt-in and off by default.
+Gemini Embedding-2 puts text, images, and audio in the same vector space. A text query can find a screenshot. A description can surface a voice memo. No OCR, no transcription — the model understands the content natively. Supported: `.jpg`, `.png`, `.webp`, `.gif`, `.mp3`, `.wav`, `.ogg`, `.opus`, `.m4a`, `.aac`, `.flac`. Multimodal is on by default — images and audio in your workspace get indexed automatically alongside your markdown.
 
 📦 **Self-contained**
 
@@ -89,6 +89,8 @@ openclaw gateway restart
 ```
 
 That's it. If you already use Gemini in OpenClaw, the API key is auto-detected. If not, get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (60 seconds) and set `GEMINI_API_KEY` in your environment.
+
+> **Switching from QMD?** Also set `memory.backend: "builtin"` in your config (QMD overrides the plugin slot). Your QMD index stays on disk untouched — switch back anytime.
 
 <details>
 <summary>Other API key options</summary>
@@ -230,15 +232,21 @@ plugins:
         #   halfLifeDays: 30                    # score halves every 30 days
         # maxSessionShare: 0.4                  # cap session results at 40%
         # multimodal:
-        #   enabled: true                       # index images and audio (default: off)
+        #   enabled: true                       # index images and audio (default: on)
         #   modalities: ["image", "audio"]
 ```
 
 ### CLI
 
 ```bash
-openclaw engram status            # index stats, provider, model, dimensions
-openclaw engram search "query"    # test a search manually
+openclaw engram status                          # index stats for all agents
+openclaw engram status --agent main             # single agent
+openclaw engram status --agent main --deep      # probe embedding + vector availability
+openclaw engram index --force                   # reindex all agents
+openclaw engram index --agent main              # reindex single agent
+openclaw engram search "query"                  # search (default agent)
+openclaw engram search "query" --agent main     # search specific agent
+openclaw engram search "query" --json           # machine-readable output
 ```
 
 ---

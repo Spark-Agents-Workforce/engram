@@ -140,6 +140,38 @@ describe("flattenSessionJsonl", () => {
     expect(flattenSessionJsonl("")).toBeNull();
     expect(flattenSessionJsonl("\n \n")).toBeNull();
   });
+
+  it("handles OpenClaw session format (message wrapper)", () => {
+    const content = [
+      JSON.stringify({ type: "session", id: "test-session", timestamp: "2026-03-16" }),
+      JSON.stringify({ type: "model_change", id: "x", timestamp: "2026-03-16" }),
+      JSON.stringify({ type: "message", message: { role: "user", content: [{ type: "text", text: "What is Engram?" }] } }),
+      JSON.stringify({ type: "message", message: { role: "assistant", content: [{ type: "text", text: "A memory plugin." }] } }),
+      JSON.stringify({ type: "message", message: { role: "system", content: "system prompt" } }),
+      JSON.stringify({ type: "custom", id: "y" }),
+    ].join("\n");
+
+    const flattened = flattenSessionJsonl(content);
+
+    expect(flattened).toEqual({
+      text: "User: What is Engram?\nAssistant: A memory plugin.",
+      lineMap: [3, 4],
+    });
+  });
+
+  it("handles mixed flat and wrapped formats", () => {
+    const content = [
+      JSON.stringify({ role: "user", content: "flat format" }),
+      JSON.stringify({ type: "message", message: { role: "assistant", content: [{ type: "text", text: "wrapped format" }] } }),
+    ].join("\n");
+
+    const flattened = flattenSessionJsonl(content);
+
+    expect(flattened).toEqual({
+      text: "User: flat format\nAssistant: wrapped format",
+      lineMap: [1, 2],
+    });
+  });
 });
 
 describe("remapChunkLines", () => {
