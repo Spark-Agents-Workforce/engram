@@ -1,0 +1,33 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Internal docs (keep local, don't publish)
+PLAN.md
+RESEARCH.md
+project-status.md
+briefs/
+README-*-draft.md
+README-*-backup.md
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Test artifacts
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal

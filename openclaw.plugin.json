@@ -1,0 +1,58 @@
+{
+  "id": "engram",
+  "kind": "memory",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "geminiApiKey": {
+        "type": "string"
+      },
+      "dimensions": {
+        "type": "number",
+        "enum": [768, 1536, 3072]
+      },
+      "chunkTokens": {
+        "type": "number",
+        "minimum": 256,
+        "maximum": 8192
+      },
+      "chunkOverlap": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 0.5
+      },
+      "reranking": {
+        "type": "boolean"
+      },
+      "timeDecay": {
+        "type": "object"
+      },
+      "maxSessionShare": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "multimodal": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "modalities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["image", "audio"]
+            }
+          },
+          "maxFileBytes": {
+            "type": "number",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}
