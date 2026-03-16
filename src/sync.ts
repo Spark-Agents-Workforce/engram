@@ -252,7 +252,15 @@ export function flattenSessionJsonl(content: string): { text: string; lineMap: n
       continue;
     }
 
-    const role = "role" in parsed ? parsed.role : undefined;
+    // Support both formats:
+    // 1. { role: "user", content: ... }  (flat format)
+    // 2. { type: "message", message: { role: "user", content: ... } }  (OpenClaw session format)
+    const inner =
+      "message" in parsed && typeof (parsed as any).message === "object" && (parsed as any).message !== null
+        ? (parsed as any).message
+        : parsed;
+
+    const role = "role" in inner ? (inner as any).role : undefined;
     if (role === "system") {
       continue;
     }
@@ -268,7 +276,7 @@ export function flattenSessionJsonl(content: string): { text: string; lineMap: n
       continue;
     }
 
-    const rawMessage = "content" in parsed ? parsed.content : undefined;
+    const rawMessage = "content" in inner ? (inner as any).content : undefined;
     const message = flattenSessionContent(rawMessage);
     if (message === null) {
       continue;
