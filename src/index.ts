@@ -16,12 +16,10 @@ function defaultAgentDir(agentId: string): string {
   return path.join(homedir(), ".openclaw", "agents", agentId);
 }
 
-function defaultCliContext(): OpenClawContext {
-  return {
-    agentId: "default",
-    agentDir: defaultAgentDir("default"),
-    workspaceDir: process.cwd(),
-  };
+interface CliAgentConfig {
+  id: string;
+  workspace: string;
+  agentDir: string;
 }
 
 async function resolveApiKey(api: OpenClawApi, config: ResolvedConfig): Promise<string> {
@@ -139,6 +137,347 @@ async function getOrCreateEngramManager(
   managers.set(agentId, manager);
   api.logger?.info?.(`engram: initialized manager for agent "${agentId}"`);
   return manager;
+}
+
+export function resolveAgentsFromConfig(clawConfig: any, agentFilter?: string): CliAgentConfig[] {
+  const agentList = Array.isArray(clawConfig?.agents?.list) ? clawConfig.agents.list : [];
+  const defaultWorkspace =
+    clawConfig?.agents?.defaults?.workspace ?? path.join(homedir(), ".openclaw", "workspace");
+
+  const agents: CliAgentConfig[] = agentList
+    .filter((agent: any) => typeof agent?.id === "string" && agent.id.trim().length > 0)
+    .map((agent: any): CliAgentConfig => ({
+      id: String(agent.id),
+      workspace: agent.workspace ?? defaultWorkspace,
+      agentDir: agent.agentDir ?? defaultAgentDir(agent.id),
+    }));
+
+  if (agentFilter) {
+    const match = agents.find((agent) => agent.id === agentFilter);
+    if (!match) {
+      throw new Error(`Agent "${agentFilter}" not found in config`);
+    }
+    return [match];
+  }
+
+  return agents;
+}
+
+function parsePositiveInteger(value: unknown, fallback: number): number {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return fallback;
+}
+
+function parseNonNegativeNumber(value: unknown, fallback: number): number {
+  const parsed = Number.parseFloat(String(value ?? ""));
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return fallback;
+}
+
+function truncateSnippet(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength)}...`;
+}
+
+async function closeCliManagers(
+  logger: { warn?: (message: string) => void } | undefined,
+  agentIds: Iterable<string>,
+): Promise<void> {
+  for (const agentId of agentIds) {
+    const manager = managers.get(agentId);
+    if (!manager) {
+      continue;
+    }
+    try {
+      await manager.close();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger?.warn?.(`engram: failed to close manager for "${agentId}": ${message}`);
+    } finally {
+      managers.delete(agentId);
+    }
+  }
+}
+
+function formatSources(status: { sources: Array<{ source: string; files: number; chunks: number }> }): string {
+  if (!Array.isArray(status.sources) || status.sources.length === 0) {
+    return "none";
+  }
+  return status.sources.map((source) => source.source).join(", ");
+}
+
+function createCliContext(agent: CliAgentConfig): OpenClawContext {
+  return {
+    agentId: agent.id,
+    agentDir: agent.agentDir,
+    workspaceDir: agent.workspace,
+  };
+}
+
+export function registerEngramCli(
+  program: any,
+  api: OpenClawApi,
+  config: ResolvedConfig,
+  clawConfig: any,
+): void {
+  const memory = program.command("engram").description("Engram memory plugin — status, search, and reindex");
+
+  memory
+    .command("status")
+    .description("Show memory search index status")
+    .option("--agent <id>", "Agent id")
+    .option("--deep", "Probe embedding and vector availability", false)
+    .option("--json", "Print JSON", false)
+    .option("--verbose", "Verbose logging", false)
+    .action(
+      async (opts: { agent?: string; deep?: boolean; json?: boolean; verbose?: boolean }) => {
+        let agents: CliAgentConfig[];
+        try {
+          agents = resolveAgentsFromConfig(clawConfig, opts.agent);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(message);
+          process.exitCode = 1;
+          return;
+        }
+
+        if (agents.length === 0) {
+          console.error("No agents found in OpenClaw config (agents.list).");
+          process.exitCode = 1;
+          return;
+        }
+
+        const rows: Array<Record<string, unknown>> = [];
+        const usedManagers = new Set<string>();
+
+        try {
+          for (const agent of agents) {
+            if (opts.verbose) {
+              api.logger?.info?.(`engram: status for agent "${agent.id}"`);
+            }
+
+            try {
+              const manager = await getOrCreateEngramManager(api, config, createCliContext(agent));
+              usedManagers.add(agent.id);
+
+              const status = manager.status();
+              let embeddingProbe: { ok: boolean; error?: string } | undefined;
+              let vectorProbe: boolean | undefined;
+
+              if (opts.deep) {
+                embeddingProbe = await manager.probeEmbeddingAvailability();
+                vectorProbe = await manager.probeVectorAvailability();
+              }
+
+              const output = {
+                agentId: agent.id,
+                provider: status.provider,
+                model: status.model,
+                files: status.files,
+                chunks: status.chunks,
+                dirty: status.dirty,
+                dbPath: status.dbPath,
+                workspaceDir: agent.workspace,
+                sources: status.sources,
+                vector: status.vector,
+                fts: status.fts,
+                embeddingProbe,
+                vectorProbe,
+              };
+
+              rows.push(output);
+
+              if (!opts.json) {
+                console.log(`Memory Search (${agent.id})`);
+                console.log(`Provider: ${status.provider} (Engram)`);
+                console.log(`Model: ${status.model}`);
+                console.log(`Sources: ${formatSources(status)}`);
+                console.log(`Indexed: ${status.files} files · ${status.chunks} chunks`);
+                console.log(`Dirty: ${status.dirty ? "yes" : "no"}`);
+                console.log(`Store: ${status.dbPath}`);
+                console.log(`Workspace: ${agent.workspace}`);
+                console.log("By source:");
+                for (const source of status.sources) {
+                  console.log(`  ${source.source} · ${source.files} files · ${source.chunks} chunks`);
+                }
+                console.log(`Vector: ${status.vector.enabled ? "enabled" : "disabled"} (dims=${status.vector.dims})`);
+                console.log(`FTS: ${status.fts.enabled ? "enabled" : "disabled"}`);
+                if (opts.deep) {
+                  const embeddingLine = embeddingProbe?.ok
+                    ? "ok"
+                    : `failed (${embeddingProbe?.error ?? "unknown error"})`;
+                  console.log(`Embedding: ${embeddingLine}`);
+                  console.log(`Vector probe: ${vectorProbe ? "ok" : "unavailable"}`);
+                }
+                console.log("");
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              rows.push({ agentId: agent.id, error: message });
+              if (opts.json) {
+                continue;
+              }
+              console.error(`Memory status failed (${agent.id}): ${message}`);
+              console.log("");
+              process.exitCode = 1;
+            }
+          }
+
+          if (opts.json) {
+            console.log(JSON.stringify(rows, null, 2));
+          }
+        } finally {
+          await closeCliManagers(api.logger, usedManagers);
+        }
+      },
+    );
+
+  memory
+    .command("index")
+    .description("Reindex memory files")
+    .option("--agent <id>", "Agent id")
+    .option("--force", "Force full reindex", false)
+    .option("--verbose", "Verbose logging", false)
+    .action(async (opts: { agent?: string; force?: boolean; verbose?: boolean }) => {
+      let agents: CliAgentConfig[];
+      try {
+        agents = resolveAgentsFromConfig(clawConfig, opts.agent);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(message);
+        process.exitCode = 1;
+        return;
+      }
+
+      if (agents.length === 0) {
+        console.error("No agents found in OpenClaw config (agents.list).");
+        process.exitCode = 1;
+        return;
+      }
+
+      let completed = 0;
+      const usedManagers = new Set<string>();
+
+      try {
+        for (const agent of agents) {
+          if (opts.verbose) {
+            api.logger?.info?.(`engram: indexing agent "${agent.id}"`);
+          }
+
+          process.stdout.write(`Indexing ${agent.id}... `);
+          try {
+            const manager = await getOrCreateEngramManager(api, config, createCliContext(agent));
+            usedManagers.add(agent.id);
+            await manager.sync({ force: Boolean(opts.force) });
+            const status = manager.status();
+            console.log(`done (${status.files} files, ${status.chunks} chunks)`);
+            completed += 1;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.log(`failed (${message})`);
+            process.exitCode = 1;
+          }
+        }
+      } finally {
+        await closeCliManagers(api.logger, usedManagers);
+      }
+
+      console.log(`Indexed ${completed} agents`);
+    });
+
+  memory
+    .command("search")
+    .description("Search memory files")
+    .argument("[query]", "Search query")
+    .option("--agent <id>", "Agent id")
+    .option("--query <text>", "Search query (alternative to positional argument)")
+    .option("--max-results <n>", "Max results", "10")
+    .option("--min-score <n>", "Minimum score", "0")
+    .option("--json", "Print JSON", false)
+    .action(
+      async (
+        queryArg: string | undefined,
+        opts: {
+          agent?: string;
+          query?: string;
+          maxResults?: string;
+          minScore?: string;
+          json?: boolean;
+        },
+      ) => {
+        const query = (opts.query ?? queryArg ?? "").trim();
+        if (!query) {
+          console.error("Missing search query. Provide [query] or --query <text>.");
+          process.exitCode = 1;
+          return;
+        }
+
+        let agent: CliAgentConfig | undefined;
+        try {
+          if (opts.agent) {
+            agent = resolveAgentsFromConfig(clawConfig, opts.agent)[0];
+          } else {
+            const agents = resolveAgentsFromConfig(clawConfig);
+            agent = agents[0];
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(message);
+          process.exitCode = 1;
+          return;
+        }
+
+        if (!agent) {
+          console.error("No agents found in OpenClaw config (agents.list).");
+          process.exitCode = 1;
+          return;
+        }
+
+        const maxResults = parsePositiveInteger(opts.maxResults, 10);
+        const minScore = parseNonNegativeNumber(opts.minScore, 0);
+
+        const usedManagers = new Set<string>();
+        try {
+          const manager = await getOrCreateEngramManager(api, config, createCliContext(agent));
+          usedManagers.add(agent.id);
+
+          const results = await manager.search(query, {
+            maxResults,
+            minScore,
+          });
+
+          if (opts.json) {
+            console.log(JSON.stringify(results, null, 2));
+            return;
+          }
+
+          if (results.length === 0) {
+            console.log("No matches.");
+            return;
+          }
+
+          for (const result of results) {
+            const citation = `${result.path}#L${result.startLine}-L${result.endLine}`;
+            console.log(`[${result.score.toFixed(2)}] ${citation}`);
+            console.log(`  ${truncateSnippet(result.snippet, 200)}`);
+            console.log("");
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`Memory search failed: ${message}`);
+          process.exitCode = 1;
+        } finally {
+          await closeCliManagers(api.logger, usedManagers);
+        }
+      },
+    );
 }
 
 function stringifyToolOutput(value: unknown): {
@@ -283,80 +622,8 @@ const engramPlugin = {
 
     if (typeof api.registerCli === "function") {
       api.registerCli(
-        ({ program }: any) => {
-          const cmd = program.command("engram").description("Engram memory plugin");
-
-          cmd
-            .command("status")
-            .description("Show Engram index status")
-            .action(async () => {
-              try {
-                const manager = await getOrCreateEngramManager(api, config, defaultCliContext());
-                const status = manager.status();
-                const embeddingProbe = await manager.probeEmbeddingAvailability();
-                const vectorProbe = await manager.probeVectorAvailability();
-
-                console.log(`Backend: ${status.backend}`);
-                console.log(`Provider: ${status.provider}`);
-                console.log(`Model: ${status.model}`);
-                console.log(`Workspace: ${status.workspaceDir}`);
-                console.log(`DB: ${status.dbPath}`);
-                console.log(`Files: ${status.files}`);
-                console.log(`Chunks: ${status.chunks}`);
-                console.log(`Dirty: ${status.dirty ? "yes" : "no"}`);
-                console.log(`Vector: ${status.vector.enabled ? "enabled" : "disabled"} (dims=${status.vector.dims})`);
-                console.log(`FTS: ${status.fts.enabled ? "enabled" : "disabled"} (available=${status.fts.available})`);
-                console.log(
-                  `Scoring: rrfK=${status.custom.rrfK}, vectorWeight=${status.custom.vectorWeight}, bm25Weight=${status.custom.bm25Weight}`,
-                );
-                console.log(
-                  `Chunking: tokens=${status.custom.chunkTokens}, overlap=${status.custom.chunkOverlap}`,
-                );
-                console.log("Sources:");
-                for (const source of status.sources) {
-                  console.log(`- ${source.source}: files=${source.files}, chunks=${source.chunks}`);
-                }
-                console.log(
-                  `Embedding probe: ${embeddingProbe.ok ? "ok" : `failed (${embeddingProbe.error ?? "unknown error"})`}`,
-                );
-                console.log(`Vector probe: ${vectorProbe ? "ok" : "unavailable"}`);
-              } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                console.error(`Engram status failed: ${message}`);
-                process.exitCode = 1;
-              }
-            });
-
-          cmd
-            .command("search")
-            .description("Test search")
-            .argument("<query>")
-            .option("--limit <n>", "Max results", "5")
-            .action(async (query: string, opts: { limit?: string }) => {
-              try {
-                const manager = await getOrCreateEngramManager(api, config, defaultCliContext());
-                const parsed = Number.parseInt(opts.limit ?? "5", 10);
-                const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
-                const results = await manager.search(query, { maxResults: limit });
-
-                if (results.length === 0) {
-                  console.log("No results.");
-                  return;
-                }
-
-                for (let i = 0; i < results.length; i += 1) {
-                  const row = results[i];
-                  console.log(
-                    `${i + 1}. ${row.path}:${row.startLine}-${row.endLine} score=${row.score.toFixed(4)} source=${row.source}`,
-                  );
-                  console.log(`   ${row.snippet}`);
-                }
-              } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                console.error(`Engram search failed: ${message}`);
-                process.exitCode = 1;
-              }
-            });
+        ({ program, config: clawConfig }: any) => {
+          registerEngramCli(program, api, config, clawConfig);
         },
         { commands: ["engram"] },
       );
