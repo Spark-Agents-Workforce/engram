@@ -15,7 +15,7 @@ describe("resolveConfig", () => {
     });
     expect(config.reranking).toBe(true);
     expect(config.multimodal).toEqual({
-      enabled: false,
+      enabled: true,
       modalities: ["image", "audio"],
       maxFileBytes: 10 * 1024 * 1024,
     });
@@ -28,7 +28,7 @@ describe("resolveConfig", () => {
       chunkOverlap: 0.2,
       reranking: false,
       timeDecay: {
-        enabled: false,
+        enabled: true,
         halfLifeDays: 14,
       },
       maxSessionShare: 0.75,
@@ -45,7 +45,7 @@ describe("resolveConfig", () => {
     expect(config.chunkOverlap).toBe(0.2);
     expect(config.reranking).toBe(false);
     expect(config.timeDecay).toEqual({
-      enabled: false,
+      enabled: true,
       halfLifeDays: 14,
     });
     expect(config.maxSessionShare).toBe(0.75);
@@ -69,7 +69,7 @@ describe("resolveConfig", () => {
       halfLifeDays: 30,
     });
     expect(config.multimodal).toEqual({
-      enabled: false,
+      enabled: true,
       modalities: ["image", "audio"],
       maxFileBytes: 10 * 1024 * 1024,
     });

@@ -55,7 +55,7 @@ export function resolveConfig(raw?: EngramConfig | Record<string, unknown>): Res
     },
     maxSessionShare: cfg.maxSessionShare ?? DEFAULT_CONFIG.maxSessionShare,
     multimodal: {
-      enabled: cfg.multimodal?.enabled ?? false,
+      enabled: cfg.multimodal?.enabled ?? true,
       modalities: normalizeMediaModalities(cfg.multimodal?.modalities),
       maxFileBytes: Math.max(1, Math.trunc(cfg.multimodal?.maxFileBytes ?? DEFAULT_MAX_MEDIA_FILE_BYTES)),
     },
