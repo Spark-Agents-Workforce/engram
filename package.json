@@ -1,10 +1,26 @@
 {
-  "name": "@sparkagents/engram",
+  "name": "@spark-agents/engram",
   "version": "0.1.0",
+  "description": "Multimodal memory for OpenClaw agents — powered by Gemini Embedding-2. Hybrid search (BM25 + vectors), cross-encoder reranking, image/audio/PDF memory.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Spark-Agents-Workforce/engram.git"
+  },
+  "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "openclaw.plugin.json"],
+  "keywords": ["openclaw", "plugin", "memory", "gemini", "multimodal", "ai-agent", "hybrid-search"],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
