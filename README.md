@@ -75,7 +75,7 @@ One SQLite file per agent. No Python. No sidecar process. No external database. 
 ## Install
 
 ```bash
-cd ~/.openclaw/extensions && npm install @sparkagents/engram
+cd ~/.openclaw/extensions && npm install @spark-agents/engram
 ```
 
 ```yaml
