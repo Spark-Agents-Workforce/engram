@@ -1,5 +1,3 @@
-import { AutoModelForSequenceClassification, AutoTokenizer, env } from "@xenova/transformers";
-
 export interface Reranker {
   /** Rerank candidates by (query, document) relevance. Returns reordered with updated scores. */
   rerank(
@@ -88,6 +86,11 @@ export function createLightweightReranker(): Reranker {
 
 export async function createReranker(): Promise<Reranker | null> {
   try {
+    // Dynamic import — @xenova/transformers bundles sharp which may not have
+    // a working native binary on all platforms. Loading lazily means the plugin
+    // still works even if the binary is missing (falls back to lightweight reranker).
+    const { AutoModelForSequenceClassification, AutoTokenizer, env } = await import("@xenova/transformers");
+
     if (process.env.NODE_ENV === "production") {
       env.allowRemoteModels = false;
     }
